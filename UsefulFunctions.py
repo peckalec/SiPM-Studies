@@ -1,4 +1,6 @@
 import numpy as np
+from scipy.optimize import curve_fit
+import numpy as np, pandas as pd
 
 def chi2(y,yfit):
     res = 0
@@ -146,3 +148,161 @@ def voltage_smooth(voltages, degree):
         voltage.insert(0,voltages[int((degree - 1) / 2) - i - 1])
     return voltage
 
+def get_dataframe(inputfiles, channelnum, rmscut, residualcut, whichstats, p0):
+    do_chi2 = whichstats[0]
+    do_amplitude_raw = whichstats[1]
+    do_amplitude_base = whichstats[2]
+    do_amplitude_fit = whichstats[3]
+    do_time_raw = whichstats[4]
+    do_time_base = whichstats[5]
+    do_time_fit = whichstats[6]
+    do_time_CDF = whichstats[7]
+    do_time_smooth = whichstats[8]
+    
+    
+    #build the collumns of the dataframe
+    #toc = ttime.perf_counter_ns()
+
+    channelnames=[]
+    for ch in channelnum:
+        channelnames.append(f'ch{ch}')
+
+    stats=[]
+    if do_chi2: stats.append("chisq")
+    if do_amplitude_raw: stats.append("P2P_raw")
+    if do_amplitude_base: stats.append("P2P_base")
+    if do_amplitude_fit: stats.append("P2P_fit")
+    if do_time_raw: stats.append("time_raw")
+    if do_time_base: stats.append("time_base")
+    if do_time_fit: stats.append("time_fit")
+    if do_time_CDF: stats.append("time_CDF")
+    if do_time_smooth: stats.append("time_smooth")
+
+    filenumber = len(inputfiles)
+
+    #Add each stat for each channel to the dataframe
+    din = {a+"_"+b:[] for a in channelnames for b in stats}
+
+    
+    for i in range(0, filenumber):                             #iterate through files
+            
+        with open(inputfiles[i]) as f:
+            current_file = (f.read().split('-- Event'))
+        
+        for j in range(1, len(current_file)):                  #iterate through events len(current_file)
+                #grab the data from each channel
+            time = np.array([])
+            voltage = [np.array([])]*4
+            lines = current_file[j].split('\n')
+            for line in lines[6:1028]:                         #iterate through data points
+                values = line.split()
+                time = np.append(time, float(values[2]))
+
+                for channel in channelnum:
+                    voltage[channel-1] = np.append(voltage[channel-1], float(values[channel+2]))
+                
+            
+            #calculate stats for each channel
+            for channel in channelnum:
+                totalrms = sum((voltage[channel-1]-np.mean(voltage[channel-1]))**2)/len(voltage[channel-1])
+                if totalrms < rmscut:
+                    popt = (np.mean(voltage[channel-1]),0,0,0,1,0)
+                    
+                    if do_chi2:
+                        chisq = 0
+                        din[f'ch{channel}_chisq'].append(chisq)
+                            
+
+                    #calculate amplitude
+                    if do_amplitude_raw: 
+                        amplitude = 0
+                        din[f'ch{channel}_P2P_raw'].append(amplitude)
+
+                    if do_amplitude_base: 
+                        amplitude = 0
+                        din[f'ch{channel}_P2P_base'].append(amplitude)
+                           
+
+                    if do_amplitude_fit: 
+                        amplitude = 0
+                        din[f'ch{channel}_P2P_fit'].append(amplitude)
+                      
+
+                    #calculate time
+                    if do_time_raw: 
+                        pulse_time = 0
+                        din[f'ch{channel}_time_raw'].append(pulse_time)
+                            
+                        
+                    if do_time_base:
+                        pulse_time = 0
+                        din[f'ch{channel}_time_base'].append(pulse_time)
+                      
+
+                    if do_time_fit: 
+                        pulse_time = 0
+                        din[f'ch{channel}_time_fit'].append(pulse_time)
+                            
+                        
+                    if do_time_smooth:
+                        pulse_time = 0
+                        din[f'ch{channel}_time_smooth'].append(pulse_time)
+                      
+
+                else:
+                    popt, pcov = curve_fit(waveform, time, voltage[channel-1],p0=p0[channel-1],
+                                           maxfev = 100000)#,bounds=([-10,60,0,60,0,-1],[10,140,100,140,3000,0])
+                    
+                    fit_voltage = waveform(time,*popt)
+                    #remove "blips"
+                    residual = np.abs(voltage[channel-1] - fit_voltage)
+                    mask = residual < residualcut
+                    for i, ele in enumerate(mask):
+                        if ele == 0:# and np.abs(time[i] - get_time_fit(popt)) > 20:
+                            voltage[channel-1][i] = uf.waveform(time[i],*popt)
+                    residual = np.abs(voltage[channel-1] - fit_voltage)
+                    
+                    #calculate chi^2
+                    if do_chi2:
+                        chisq = get_chi2(popt,time,voltage[channel-1])
+                        din[f'ch{channel}_chisq'].append(chisq)
+                            
+
+                    #calculate amplitude
+                    if do_amplitude_raw: 
+                        amplitude = get_amplitude_raw(voltage[channel-1])
+                        din[f'ch{channel}_P2P_raw'].append(amplitude)
+                            
+
+                    if do_amplitude_base: 
+                        amplitude = get_amplitude_base(popt,voltage[channel-1])
+                        din[f'ch{channel}_P2P_base'].append(amplitude)
+                            
+
+                    if do_amplitude_fit: 
+                        amplitude = get_amplitude_fit(popt)
+                        din[f'ch{channel}_P2P_fit'].append(amplitude)
+                            
+
+                    #calculate time
+                    if do_time_raw: 
+                        pulse_time = get_time_raw(time,voltage[channel-1])
+                        din[f'ch{channel}_time_raw'].append(pulse_time)
+                            
+
+                    if do_time_base:
+                        pulse_time = get_time_base(popt, time, voltage[channel-1])
+                        din[f'ch{channel}_time_base'].append(pulse_time)
+                            
+
+                    if do_time_fit: 
+                        pulse_time = get_time_fit(popt)
+                        din[f'ch{channel}_time_fit'].append(pulse_time)
+                           
+                        
+                    if do_time_smooth:
+                        pulse_time = get_time_smooth(popt, time, voltage[channel-1], 3)
+                        din[f'ch{channel}_time_smooth'].append(pulse_time)
+                                            
+
+    return pd.DataFrame(din)
