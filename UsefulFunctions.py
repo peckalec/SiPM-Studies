@@ -8,9 +8,9 @@ def chi2(y,yfit):
         res = res + (y[i]-yfit[i])**2/(0.9724)**2 #The denominator should be the unbias Sipm voltage in mV
     return (res / len(yfit))
 
-def waveform(x, Ci, start, m, end, d, Cf):
+def waveform(x, Ci, start, m, end, d, A):
     condlist = [x < start, (x >= start) & (x <= end), x > end]
-    funclist = [lambda x: Ci, lambda x: m*x+(Ci - m*start), lambda x: (m*(end-start) + Ci)*np.exp((x-end)/d) + Cf]
+    funclist = [lambda x: Ci, lambda x: m*x+(Ci - m*start), lambda x: (A*(np.exp(x/d)-np.exp(end/d)) + m*(end-start) + Ci)]
     #(A*(np.exp(x/d)-np.exp(end/d)) + m*(end-start) + Ci)
     #(m*(end-start) + Ci)*np.exp((x-end)/d) + Cf
     
@@ -62,7 +62,7 @@ def findindex(xvals,xval):
 def get_chi2(fitparams,times,voltages):
     startindex=1
     for i in range(len(times)): 
-        if times[i] < fitparams[1]: startindex = i
+        if times[i] < fitparams[1]: startindex = i + 1
         else: break
     chisq = chi2(voltages[0:startindex],waveform(times[0:startindex], *fitparams))
     return chisq
@@ -75,6 +75,12 @@ def get_amplitude_raw(voltages):
 def get_amplitude_base(fitparams,voltages):
     v_min = fitparams[0]
     v_max=max(voltages)
+    return v_max-v_min
+
+def get_amplitude_smooth(fitparams,voltages,degree):
+    voltagesmooth = voltage_smooth(voltages,degree)
+    v_min = fitparams[0]
+    v_max=max(voltagesmooth)
     return v_max-v_min
 
 def get_amplitude_fit(fitparams):
@@ -115,49 +121,41 @@ def get_time_fit_CDF(fitparams):
     return pulse_time
 
 def get_time_smooth(fitparams,times,voltages,degree): # Mid point smoothing function
-    voltage_smooth = []
-    for i in range(len(voltages) - degree - 1):
-        vol = 0
-        for j in range(degree):
-            vol += voltages[j+i]
-        voltage_smooth.append(vol / degree)
-    for i in range(int((degree - 1) / 2)):
-        voltage_smooth.append(voltages[-(int((degree - 1) / 2) - i)])
-        voltage_smooth.insert(0,voltages[int((degree - 1) / 2) - i - 1])
+    voltagesmooth = voltage_smooth(voltages, degree) 
 
-    halfamp = 0.5*(max(voltage_smooth)-fitparams[0]) + fitparams[0]
-    halfindex = findindex(voltage_smooth,max(voltage_smooth)+1)
+    halfamp = 0.5*(max(voltagesmooth)-fitparams[0]) + fitparams[0]
+    halfindex = findindex(voltagesmooth,max(voltagesmooth)+1)
     haltime = 0
-    while voltage_smooth[halfindex] - halfamp > 0:
+    while voltagesmooth[halfindex] - halfamp > 0:
         halfindex -= 1
-    if abs(voltage_smooth[halfindex] - halfamp) < abs(voltage_smooth[halfindex + 1] - halfamp):
+    if abs(voltagesmooth[halfindex] - halfamp) < abs(voltagesmooth[halfindex + 1] - halfamp):
         halftime = times[halfindex]
     else: 
         halftime = times[halfindex + 1]
     return halftime
 
 def voltage_smooth(voltages, degree):
-    voltage = []
-    for i in range(len(voltages) - degree + 1):
-        vol = 0
-        for j in range(degree):
-            vol += voltages[j+i]
-        voltage.append(vol / degree)
-    for i in range(int((degree - 1) / 2)):
-        voltage.append(voltages[-(int((degree - 1) / 2) - i)])
-        voltage.insert(0,voltages[int((degree - 1) / 2) - i - 1])
-    return voltage
+    degree = (int(degree/2))*2+1
+    newarray = voltages[:-degree+1]/degree
+    for deg in range(degree):
+        if deg == 0: continue
+        newarray += myarray[deg:np.size(myarray)-degree+deg+1]/degree
+    newarray = np.insert(newarray,0,myarray[0:int((degree - 1) / 2)])
+    newarray = np.append(newarray,myarray[-int((degree - 1) / 2):])
+    
+    return newarray
 
 def get_dataframe(inputfiles, channelnum, rmscut, residualcut, whichstats, p0):
     do_chi2 = whichstats[0]
     do_amplitude_raw = whichstats[1]
     do_amplitude_base = whichstats[2]
-    do_amplitude_fit = whichstats[3]
-    do_time_raw = whichstats[4]
-    do_time_base = whichstats[5]
-    do_time_fit = whichstats[6]
-    do_time_CDF = whichstats[7]
-    do_time_smooth = whichstats[8]
+    do_amplitude_smooth = whichstats[3]
+    do_amplitude_fit = whichstats[4]
+    do_time_raw = whichstats[5]
+    do_time_base = whichstats[6]
+    do_time_fit = whichstats[7]
+    do_time_CDF = whichstats[8]
+    do_time_smooth = whichstats[9]
     
     
     #build the collumns of the dataframe
@@ -171,6 +169,7 @@ def get_dataframe(inputfiles, channelnum, rmscut, residualcut, whichstats, p0):
     if do_chi2: stats.append("chisq")
     if do_amplitude_raw: stats.append("P2P_raw")
     if do_amplitude_base: stats.append("P2P_base")
+    if do_amplitude_smooth: stats.append("P2P_smooth")
     if do_amplitude_fit: stats.append("P2P_fit")
     if do_time_raw: stats.append("time_raw")
     if do_time_base: stats.append("time_base")
@@ -207,7 +206,10 @@ def get_dataframe(inputfiles, channelnum, rmscut, residualcut, whichstats, p0):
                 totalrms = sum((voltage[channel-1]-np.mean(voltage[channel-1]))**2)/len(voltage[channel-1])
                 if totalrms < rmscut:
                     popt = (np.mean(voltage[channel-1]),0,0,0,1,0)
-                    
+                    fit_voltage = uf.waveform(time,*popt)
+                    #remove "blips"
+                    residual = np.abs(voltage[channel-1] - fit_voltage)
+
                     if do_chi2:
                         chisq = 0
                         din[f'ch{channel}_chisq'].append(chisq)
@@ -222,6 +224,9 @@ def get_dataframe(inputfiles, channelnum, rmscut, residualcut, whichstats, p0):
                         amplitude = 0
                         din[f'ch{channel}_P2P_base'].append(amplitude)
                            
+                    if do_amplitude_smooth: 
+                        amplitude = 0
+                        din[f'ch{channel}_P2P_smooth'].append(amplitude)
 
                     if do_amplitude_fit: 
                         amplitude = 0
@@ -259,8 +264,7 @@ def get_dataframe(inputfiles, channelnum, rmscut, residualcut, whichstats, p0):
                     mask = residual < residualcut
                     for i, ele in enumerate(mask):
                         if ele == 0:# and np.abs(time[i] - get_time_fit(popt)) > 20:
-                            voltage[channel-1][i] = uf.waveform(time[i],*popt)
-                    residual = np.abs(voltage[channel-1] - fit_voltage)
+                            voltage[channel-1][i] = waveform(time[i],*popt)
                     
                     #calculate chi^2
                     if do_chi2:
@@ -278,6 +282,9 @@ def get_dataframe(inputfiles, channelnum, rmscut, residualcut, whichstats, p0):
                         amplitude = get_amplitude_base(popt,voltage[channel-1])
                         din[f'ch{channel}_P2P_base'].append(amplitude)
                             
+                    if do_amplitude_smooth: 
+                        amplitude = get_amplitude_smooth(popt,voltage[channel-1],5)
+                        din[f'ch{channel}_P2P_smooth'].append(amplitude)
 
                     if do_amplitude_fit: 
                         amplitude = get_amplitude_fit(popt)
