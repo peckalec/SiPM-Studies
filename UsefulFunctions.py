@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.optimize import curve_fit
 import numpy as np, pandas as pd
+import matplotlib.pyplot as plt
 
 def chi2(y,yfit):
     res = 0
@@ -139,13 +140,46 @@ def voltage_smooth(voltages, degree):
     newarray = voltages[:-degree+1]/degree
     for deg in range(degree):
         if deg == 0: continue
-        newarray += myarray[deg:np.size(myarray)-degree+deg+1]/degree
-    newarray = np.insert(newarray,0,myarray[0:int((degree - 1) / 2)])
-    newarray = np.append(newarray,myarray[-int((degree - 1) / 2):])
+        newarray += voltages[deg:np.size(voltages)-degree+deg+1]/degree
+    newarray = np.insert(newarray,0,voltages[0:int((degree - 1) / 2)])
+    newarray = np.append(newarray,voltages[-int((degree - 1) / 2):])
     
     return newarray
 
-def get_dataframe(inputfiles, channelnum, rmscut, residualcut, whichstats, p0):
+def get_dataframe(inputfiles, whichstats, channelnum=[1,2,3,4], rmscut=1.5, residualcut=10, p0=[(0,100,1,110,-100,100),(0,100,1,110,-100,100),(0,100,1,110,-100,100),(0,100,1,110,-100,100),(0,100,1,110,-100,100)], verbose=False,viewevents=10):
+    #error handling
+    error = False
+    if "list" not in str(type(inputfiles)):
+        print("ERROR: inputfiles (first input) must be a list of strings.")
+        error = True
+    else:
+        for inputfile in inputfiles:
+            if "str" not in str(type(inputfile)): 
+                print("ERROR: inputfiles (first input) must be a list of strings.")
+                error = True
+    if "list" not in str(type(whichstats)):
+        print("ERROR: whichstats (second input) must be a list of ten boolean values.")
+        error = True
+    elif len(whichstats) != 10: 
+        print("ERROR: whichstats (second input) must be a list of ten boolean values.")
+        error = True
+    else:
+        for whichstat in whichstats:
+            if not (whichstat == 0 or whichstat == 1): 
+                print("ERROR: whichstats (second input) must be a list of ten boolean values.")
+                error = True
+    if "list" not in str(type(channelnum)):
+        print("ERROR: channelnum must be a list of integers (1 through 4).")
+        error = True
+    else:
+        for chan in channelnum:
+            if not (chan == 1 or chan ==2 or chan ==3 or chan == 4): 
+                print("ERROR: channelnum must be a list of integers (1 through 4).")
+                error = True
+    
+    
+    
+    
     do_chi2 = whichstats[0]
     do_amplitude_raw = whichstats[1]
     do_amplitude_base = whichstats[2]
@@ -184,15 +218,27 @@ def get_dataframe(inputfiles, channelnum, rmscut, residualcut, whichstats, p0):
 
     
     for i in range(0, filenumber):                             #iterate through files
-            
+        if error: continue
         with open(inputfiles[i]) as f:
+            print(f"File: {inputfiles[i]}")
             current_file = (f.read().split('-- Event'))
         
         for j in range(1, len(current_file)):                  #iterate through events len(current_file)
-                #grab the data from each channel
+            if (verbose and j > viewevents and j%10==0) or (not verbose and j%10==0): print(f"Event: {j}",end="\r")
+            
+            #grab the data from each channel
             time = np.array([])
             voltage = [np.array([])]*4
             lines = current_file[j].split('\n')
+            
+            if verbose and (j <= viewevents): #show the waveform fit line
+                print(f"Event Number {j}")
+                fig,ax = plt.subplots(1,4,figsize=(32,4))
+                ax[0].set_title("Ch. 1")
+                ax[1].set_title("Ch. 2")
+                ax[2].set_title("Ch. 3")
+                ax[3].set_title("Ch. 4")
+                
             for line in lines[6:1028]:                         #iterate through data points
                 values = line.split()
                 time = np.append(time, float(values[2]))
@@ -206,7 +252,7 @@ def get_dataframe(inputfiles, channelnum, rmscut, residualcut, whichstats, p0):
                 totalrms = sum((voltage[channel-1]-np.mean(voltage[channel-1]))**2)/len(voltage[channel-1])
                 if totalrms < rmscut:
                     popt = (np.mean(voltage[channel-1]),0,0,0,1,0)
-                    fit_voltage = uf.waveform(time,*popt)
+                    fit_voltage = waveform(time,*popt)
                     #remove "blips"
                     residual = np.abs(voltage[channel-1] - fit_voltage)
 
@@ -310,6 +356,34 @@ def get_dataframe(inputfiles, channelnum, rmscut, residualcut, whichstats, p0):
                     if do_time_smooth:
                         pulse_time = get_time_smooth(popt, time, voltage[channel-1], 3)
                         din[f'ch{channel}_time_smooth'].append(pulse_time)
-                                            
+                        
+                if verbose and (j <= viewevents): #show the waveform fit line
+                    print(f"Channel {channel} RMS: {totalrms:.2f}; fit params: {popt[0]:.2f}, {popt[1]:.1f}, {popt[2]:.2f}, {popt[3]:.1f}, {popt[4]:.2f}, {popt[5]:.3f}")
+                    ts = np.linspace(0,np.max(time),501)
+                    if totalrms > rmscut: 
+                        fits = waveform(ts,*popt)
+                    else:
+                        fits = [popt[0]]*501
 
-    return pd.DataFrame(din)
+                    ax[channel-1].plot(time,voltage[channel-1],label="raw")
+                    if do_time_smooth or do_amplitude_smooth: ax[channel-1].plot(time,voltage_smooth(voltage[channel-1],5),label="smooth_5", color='orange')
+                    ax[channel-1].plot(ts,fits,label="fit")
+                    ax[channel-1].plot(time,residual,label="residual")
+                    #ax[channel-1].set_xlim(50,100)
+                    ax[channel-1].set_ylim(-5,15)
+                    #draw the P2P and time 
+                    if do_time_raw: ax[channel-1].vlines(get_time_raw(time,voltage[channel-1]),ymin=-10,ymax=20, color='r',label="t_raw")
+                    if do_time_base: ax[channel-1].vlines(get_time_base(popt,time,voltage[channel-1]),ymin=5,ymax=35, color='b',label="t_base")
+                    if do_time_fit: ax[channel-1].vlines(get_time_fit(popt),ymin=20,ymax=50, color='g',label="t_fit")
+                    if do_amplitude_raw: ax[channel-1].hlines(get_amplitude_raw(voltage[channel-1]),xmin=0,xmax=200, color='r',label="A_raw")
+                    if do_amplitude_fit: ax[channel-1].hlines(get_amplitude_fit(popt),xmin=0,xmax=200, color='g',label="A_fit")
+                    if do_amplitude_base: ax[channel-1].hlines(get_amplitude_base(popt,voltage[channel-1]),xmin=0,xmax=200, color='b',label="A_base")
+                    if do_time_smooth: ax[channel-1].vlines(get_time_smooth(popt,time,voltage[channel-1],5),ymin=35,ymax=65, color='orange',label="t_smooth_5")
+                
+            if verbose and (j <= viewevents):
+                plt.legend()        
+                plt.show()
+    df = pd.DataFrame(din)                         
+    print(f"\nDone! Total events analyzed: {len(df)}")
+
+    return df
