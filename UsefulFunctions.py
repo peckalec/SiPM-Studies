@@ -125,7 +125,7 @@ def get_time_smooth(fitparams,times,voltages,degree): # Mid point smoothing func
     voltagesmooth = voltage_smooth(voltages, degree) 
 
     halfamp = 0.5*(max(voltagesmooth)-fitparams[0]) + fitparams[0]
-    halfindex = findindex(voltagesmooth,max(voltagesmooth)+1)
+    halfindex = min([findindex(voltagesmooth,max(voltagesmooth))+1,len(voltagesmooth)-1])
     haltime = 0
     while voltagesmooth[halfindex] - halfamp > 0:
         halfindex -= 1
@@ -146,7 +146,7 @@ def voltage_smooth(voltages, degree):
     
     return newarray
 
-def get_dataframe(inputfiles, whichstats, channelnum=[1,2,3,4], rmscut=1.5, residualcut=10, p0=[(0,100,1,110,-100,100),(0,100,1,110,-100,100),(0,100,1,110,-100,100),(0,100,1,110,-100,100),(0,100,1,110,-100,100)], verbose=False,viewevents=10):
+def get_dataframe(inputfiles, whichstats, channelnum=[1,2,3,4], rmscut=1.5, residualcut=10, p0=[(0,100,1,110,-100,100),(0,100,1,110,-100,100),(0,100,1,110,-100,100),(0,100,1,110,-100,100),(0,100,1,110,-100,100)],do_residual=False, verbose=False,viewevents=10,vieweventstart=0,eventstart=1):
     #error handling
     error = False
     if "list" not in str(type(inputfiles)):
@@ -223,15 +223,15 @@ def get_dataframe(inputfiles, whichstats, channelnum=[1,2,3,4], rmscut=1.5, resi
             print(f"File: {inputfiles[i]}")
             current_file = (f.read().split('-- Event'))
         
-        for j in range(1, len(current_file)):                  #iterate through events len(current_file)
-            if (verbose and j > viewevents and j%10==0) or (not verbose and j%10==0): print(f"Event: {j}",end="\r")
+        for j in range(eventstart, len(current_file)):                  #iterate through events len(current_file)
+            if (verbose and (j < vieweventstart or j > viewevents+vieweventstart) and j%10==0) or (not verbose and j%10==0): print(f"Event: {j}",end="\r")
             
             #grab the data from each channel
             time = np.array([])
             voltage = [np.array([])]*4
             lines = current_file[j].split('\n')
             
-            if verbose and (j <= viewevents): #show the waveform fit line
+            if verbose and (j >= vieweventstart) and (j <= viewevents+vieweventstart): #show the waveform fit line
                 print(f"Event Number {j}")
                 fig,ax = plt.subplots(1,4,figsize=(32,4))
                 ax[0].set_title("Ch. 1")
@@ -357,7 +357,7 @@ def get_dataframe(inputfiles, whichstats, channelnum=[1,2,3,4], rmscut=1.5, resi
                         pulse_time = get_time_smooth(popt, time, voltage[channel-1], 3)
                         din[f'ch{channel}_time_smooth'].append(pulse_time)
                         
-                if verbose and (j <= viewevents): #show the waveform fit line
+                if verbose and (j >= vieweventstart) and (j <= viewevents+vieweventstart): #show the waveform fit line
                     print(f"Channel {channel} RMS: {totalrms:.2f}; fit params: {popt[0]:.2f}, {popt[1]:.1f}, {popt[2]:.2f}, {popt[3]:.1f}, {popt[4]:.2f}, {popt[5]:.3f}")
                     ts = np.linspace(0,np.max(time),501)
                     if totalrms > rmscut: 
@@ -368,9 +368,9 @@ def get_dataframe(inputfiles, whichstats, channelnum=[1,2,3,4], rmscut=1.5, resi
                     ax[channel-1].plot(time,voltage[channel-1],label="raw")
                     if do_time_smooth or do_amplitude_smooth: ax[channel-1].plot(time,voltage_smooth(voltage[channel-1],5),label="smooth_5", color='orange')
                     ax[channel-1].plot(ts,fits,label="fit")
-                    ax[channel-1].plot(time,residual,label="residual")
+                    if do_residual: ax[channel-1].plot(time,residual,label="residual")
                     #ax[channel-1].set_xlim(50,100)
-                    ax[channel-1].set_ylim(-5,15)
+                    #ax[channel-1].set_ylim(-5,15)
                     #draw the P2P and time 
                     if do_time_raw: ax[channel-1].vlines(get_time_raw(time,voltage[channel-1]),ymin=-10,ymax=20, color='r',label="t_raw")
                     if do_time_base: ax[channel-1].vlines(get_time_base(popt,time,voltage[channel-1]),ymin=5,ymax=35, color='b',label="t_base")
@@ -380,10 +380,11 @@ def get_dataframe(inputfiles, whichstats, channelnum=[1,2,3,4], rmscut=1.5, resi
                     if do_amplitude_base: ax[channel-1].hlines(get_amplitude_base(popt,voltage[channel-1]),xmin=0,xmax=200, color='b',label="A_base")
                     if do_time_smooth: ax[channel-1].vlines(get_time_smooth(popt,time,voltage[channel-1],5),ymin=35,ymax=65, color='orange',label="t_smooth_5")
                 
-            if verbose and (j <= viewevents):
+            if verbose and (j >= vieweventstart) and (j <= viewevents+vieweventstart):
                 plt.legend()        
                 plt.show()
+        print("")
     df = pd.DataFrame(din)                         
-    print(f"\nDone! Total events analyzed: {len(df)}")
+    print(f"Done! Total events analyzed: {len(df)}")
 
     return df
