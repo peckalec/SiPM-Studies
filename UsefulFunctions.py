@@ -74,7 +74,7 @@ def get_amplitude_raw(voltages):
     return v_max-v_min
 
 def get_amplitude_base(voltages):
-    v_min = np.sum(voltages[0:150])/151)
+    v_min = np.sum(voltages[0:150])/151
     v_max=max(voltages)
     return v_max-v_min
 
@@ -125,9 +125,9 @@ def get_time_smooth(times,voltages,degree): # Mid point smoothing function
     voltagesmooth = voltage_smooth(voltages, degree) 
 
     halfamp = 0.5*(max(voltagesmooth)+np.sum(voltagesmooth[0:150])/151)
-    halfindex = min([findindex(voltagesmooth,max(voltagesmooth))+1,len(voltagesmooth)-1])
+    halfindex = min([findindex(voltagesmooth,max(voltagesmooth))+1,len(voltagesmooth)-2])
     haltime = 0
-    while voltagesmooth[halfindex] - halfamp > 0:
+    while ((voltagesmooth[halfindex] - halfamp) > 0 and (halfindex > 1)):
         halfindex -= 1
     if abs(voltagesmooth[halfindex] - halfamp) < abs(voltagesmooth[halfindex + 1] - halfamp):
         halftime = times[halfindex]
@@ -309,8 +309,8 @@ def get_dataframe(inputfiles, whichstats, channelnum=[1,2,3,4], rmscut=1.5, resi
                         if ele == 0:# and np.abs(time[i] - get_time_fit(popt)) > 20:
                             voltage[channel-1][i] = smoothvoltage[i]
                             
-                    popt, pcov = curve_fit(waveform, time, voltage[channel-1],p0=p0[channel-1],
-                                           maxfev = 100000)#,bounds=([-10,10,1,60,-1000,0],[10,100,30,140,0,1000]))
+                    if do_amplitude_fit or do_time_fit: 
+                        popt, pcov = curve_fit(waveform, time, voltage[channel-1],p0=p0[channel-1],maxfev = 100000)#,bounds ([-10,10,1,60,-1000,0],[10,100,30,140,0,1000]))
                     
                     #calculate chi^2
                     if do_chi2:
@@ -366,8 +366,9 @@ def get_dataframe(inputfiles, whichstats, channelnum=[1,2,3,4], rmscut=1.5, resi
                         fits = [popt[0]]*501
 
                     ax[channel-1].plot(time,voltage[channel-1],label="raw")
+                    ax[channel-1].hlines(np.sum(voltage_smooth[0:151],xmin=0,xmax=200, color='purple',label="smooth_baseline"))
                     if do_time_smooth or do_amplitude_smooth: ax[channel-1].plot(time,voltage_smooth(voltage[channel-1],5),label="smooth_5", color='orange')
-                    ax[channel-1].plot(ts,fits,label="fit")
+                    if do_amplitude_fit or do_time_fit: ax[channel-1].plot(ts,fits,label="fit")
                     if do_residual: ax[channel-1].plot(time,residual,label="residual")
                     #ax[channel-1].set_xlim(50,100)
                     #ax[channel-1].set_ylim(-5,15)
