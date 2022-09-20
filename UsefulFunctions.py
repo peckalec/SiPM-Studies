@@ -60,28 +60,25 @@ def findindex(xvals,xval):
             index = i
     return index
 
-def get_chi2(fitparams,times,voltages):
-    startindex=1
-    for i in range(len(times)): 
-        if times[i] < fitparams[1]: startindex = i + 1
-        else: break
-    chisq = chi2(voltages[0:startindex],waveform(times[0:startindex], *fitparams))
+def get_chi2(voltages):
+    avg = np.mean(voltages[0:150])
+    chisq = chi2(voltages[0:150],[avg]*150)
     return chisq
 
 def get_amplitude_raw(voltages):
-    v_max=max(voltages)
-    v_min=min(voltages[0:findindex(voltages,v_max)+1])
+    v_max=np.max(voltages)
+    v_min=np.min(voltages[0:findindex(voltages,v_max)+1])
     return v_max-v_min
 
 def get_amplitude_base(voltages):
-    v_min = np.sum(voltages[0:150])/151
-    v_max=max(voltages)
+    v_min = np.mean(voltages[0:150])
+    v_max=np.max(voltages)
     return v_max-v_min
 
 def get_amplitude_smooth(voltages,degree):
     voltagesmooth = voltage_smooth(voltages,degree)
-    v_min = np.sum(voltagesmooth[0:150])/151
-    v_max=max(voltagesmooth)
+    v_min = np.mean(voltagesmooth[0:150])
+    v_max=np.max(voltagesmooth)
     return v_max-v_min
 
 def get_amplitude_fit(fitparams):
@@ -89,9 +86,9 @@ def get_amplitude_fit(fitparams):
     return linearrise
 
 def get_time_raw(times,voltages):
-    prevoltages = voltages[0:findindex(voltages,max(voltages))+1]
-    halfamp = 0.5*(max(voltages)+min(prevoltages))
-    halfindex = findindex(voltages,max(voltages)) #initially halfindex = maxindex
+    prevoltages = voltages[0:findindex(voltages,np.max(voltages))+1]
+    halfamp = 0.5*(np.max(voltages)+np.min(prevoltages))
+    halfindex = findindex(voltages,np.max(voltages)) #initially halfindex = maxindex
     haltime = 0
     while voltages[halfindex] - halfamp > 0:
         halfindex -= 1
@@ -102,8 +99,8 @@ def get_time_raw(times,voltages):
     return halftime
 
 def get_time_base(times,voltages):
-    halfamp = 0.5*(max(voltages)+np.sum(voltages[0:150])/151)
-    halfindex = findindex(voltages,max(voltages)+1)
+    halfamp = 0.5*(np.max(voltages)+np.mean(voltages[0:150]))
+    halfindex = findindex(voltages,np.max(voltages)+1)
     haltime = 0
     while voltages[halfindex] - halfamp > 0 and halfindex > 0:
         halfindex -= 1
@@ -124,8 +121,8 @@ def get_time_fit_CDF(fitparams):
 def get_time_smooth(times,voltages,degree): # Mid point smoothing function
     voltagesmooth = voltage_smooth(voltages, degree) 
 
-    halfamp = 0.5*(max(voltagesmooth)+np.sum(voltagesmooth[0:150])/151)
-    halfindex = min([findindex(voltagesmooth,max(voltagesmooth))+1,len(voltagesmooth)-2])
+    halfamp = 0.5*(np.max(voltagesmooth)+np.sum(voltagesmooth[0:150])/151)
+    halfindex = np.min([findindex(voltagesmooth,np.max(voltagesmooth))+1,len(voltagesmooth)-2])
     haltime = 0
     while ((voltagesmooth[halfindex] - halfamp) > 0 and (halfindex > 1)):
         halfindex -= 1
@@ -158,10 +155,10 @@ def get_dataframe(inputfiles, whichstats, channelnum=[1,2,3,4], rmscut=1.5, resi
                 print("ERROR: inputfiles (first input) must be a list of strings.")
                 error = True
     if "list" not in str(type(whichstats)):
-        print("ERROR: whichstats (second input) must be a list of ten boolean values.")
+        print("ERROR: whichstats (second input) must be a list of six boolean values.")
         error = True
-    elif len(whichstats) != 10: 
-        print("ERROR: whichstats (second input) must be a list of ten boolean values.")
+    elif len(whichstats) != 6: 
+        print("ERROR: whichstats (second input) must be a list of six boolean values.")
         error = True
     else:
         for whichstat in whichstats:
@@ -181,15 +178,11 @@ def get_dataframe(inputfiles, whichstats, channelnum=[1,2,3,4], rmscut=1.5, resi
     
     
     do_chi2 = whichstats[0]
-    do_amplitude_raw = whichstats[1]
-    do_amplitude_base = whichstats[2]
-    do_amplitude_smooth = whichstats[3]
-    do_amplitude_fit = whichstats[4]
-    do_time_raw = whichstats[5]
-    do_time_base = whichstats[6]
-    do_time_fit = whichstats[7]
-    do_time_CDF = whichstats[8]
-    do_time_smooth = whichstats[9]
+    do_raw = whichstats[1]
+    do_base = whichstats[2]
+    do_smooth = whichstats[3]
+    do_fit = whichstats[4]
+    do_time_CDF = whichstats[5]
     
     
     #build the collumns of the dataframe
@@ -201,15 +194,19 @@ def get_dataframe(inputfiles, whichstats, channelnum=[1,2,3,4], rmscut=1.5, resi
 
     stats=[]
     if do_chi2: stats.append("chisq")
-    if do_amplitude_raw: stats.append("P2P_raw")
-    if do_amplitude_base: stats.append("P2P_base")
-    if do_amplitude_smooth: stats.append("P2P_smooth")
-    if do_amplitude_fit: stats.append("P2P_fit")
-    if do_time_raw: stats.append("time_raw")
-    if do_time_base: stats.append("time_base")
-    if do_time_fit: stats.append("time_fit")
+    if do_raw: 
+        stats.append("P2P_raw")
+        stats.append("time_raw")
+    if do_base: 
+        stats.append("P2P_base")
+        stats.append("time_base")
+    if do_smooth: 
+        stats.append("P2P_smooth")
+        stats.append("time_smooth")
+    if do_fit: 
+        stats.append("P2P_fit")
+        stats.append("time_fit")
     if do_time_CDF: stats.append("time_CDF")
-    if do_time_smooth: stats.append("time_smooth")
 
     filenumber = len(inputfiles)
 
@@ -261,44 +258,30 @@ def get_dataframe(inputfiles, whichstats, channelnum=[1,2,3,4], rmscut=1.5, resi
                         din[f'ch{channel}_chisq'].append(chisq)
                             
 
-                    #calculate amplitude
-                    if do_amplitude_raw: 
+                    #calculate amplitude & time
+                    if do_raw: 
                         amplitude = 0
                         din[f'ch{channel}_P2P_raw'].append(amplitude)
-
-                    if do_amplitude_base: 
-                        amplitude = 0
-                        din[f'ch{channel}_P2P_base'].append(amplitude)
-                           
-                    if do_amplitude_smooth: 
-                        amplitude = 0
-                        din[f'ch{channel}_P2P_smooth'].append(amplitude)
-
-                    if do_amplitude_fit: 
-                        amplitude = 0
-                        din[f'ch{channel}_P2P_fit'].append(amplitude)
-                      
-
-                    #calculate time
-                    if do_time_raw: 
                         pulse_time = 0
                         din[f'ch{channel}_time_raw'].append(pulse_time)
-                            
-                        
-                    if do_time_base:
+
+                    if do_base: 
+                        amplitude = 0
+                        din[f'ch{channel}_P2P_base'].append(amplitude)
                         pulse_time = 0
                         din[f'ch{channel}_time_base'].append(pulse_time)
-                      
-
-                    if do_time_fit: 
-                        pulse_time = 0
-                        din[f'ch{channel}_time_fit'].append(pulse_time)
-                            
-                        
-                    if do_time_smooth:
+                           
+                    if do_smooth: 
+                        amplitude = 0
+                        din[f'ch{channel}_P2P_smooth'].append(amplitude)
                         pulse_time = 0
                         din[f'ch{channel}_time_smooth'].append(pulse_time)
-                      
+
+                    if do_fit: 
+                        amplitude = 0
+                        din[f'ch{channel}_P2P_fit'].append(amplitude)
+                        pulse_time = 0
+                        din[f'ch{channel}_time_fit'].append(pulse_time)                      
 
                 else:
                     #remove "blips"
@@ -309,78 +292,82 @@ def get_dataframe(inputfiles, whichstats, channelnum=[1,2,3,4], rmscut=1.5, resi
                         if ele == 0:# and np.abs(time[i] - get_time_fit(popt)) > 20:
                             voltage[channel-1][i] = smoothvoltage[i]
                             
-                    if do_amplitude_fit or do_time_fit: 
+                    if do_fit: 
                         popt, pcov = curve_fit(waveform, time, voltage[channel-1],p0=p0[channel-1],maxfev = 100000)#,bounds ([-10,10,1,60,-1000,0],[10,100,30,140,0,1000]))
                     
                     #calculate chi^2
                     if do_chi2:
-                        chisq = get_chi2(popt,time,voltage[channel-1])
+                        chisq = get_chi2(voltage[channel-1])
                         din[f'ch{channel}_chisq'].append(chisq)
                             
 
-                    #calculate amplitude
-                    if do_amplitude_raw: 
-                        amplitude = get_amplitude_raw(voltage[channel-1])
-                        din[f'ch{channel}_P2P_raw'].append(amplitude)
+                    #calculate amplitude and time
+                    if do_raw: 
+                        amplitude_raw = get_amplitude_raw(voltage[channel-1])
+                        din[f'ch{channel}_P2P_raw'].append(amplitude_raw)
+                        pulse_time_raw = get_time_raw(time,voltage[channel-1])
+                        din[f'ch{channel}_time_raw'].append(pulse_time_raw)
                             
-
-                    if do_amplitude_base: 
-                        amplitude = get_amplitude_base(voltage[channel-1])
-                        din[f'ch{channel}_P2P_base'].append(amplitude)
+                    if do_base: 
+                        amplitude_base = get_amplitude_base(voltage[channel-1])
+                        din[f'ch{channel}_P2P_base'].append(amplitude_base)
+                        pulse_time_base = get_time_base(time, voltage[channel-1])
+                        din[f'ch{channel}_time_base'].append(pulse_time_base)
                             
-                    if do_amplitude_smooth: 
-                        amplitude = get_amplitude_smooth(voltage[channel-1],5)
-                        din[f'ch{channel}_P2P_smooth'].append(amplitude)
+                    if do_smooth: 
+                        amplitude_smooth = get_amplitude_smooth(voltage[channel-1],5)
+                        din[f'ch{channel}_P2P_smooth'].append(amplitude_smooth)
+                        pulse_time_smooth = get_time_smooth(time, voltage[channel-1], 5)
+                        din[f'ch{channel}_time_smooth'].append(pulse_time_smooth)
 
-                    if do_amplitude_fit: 
-                        amplitude = get_amplitude_fit(popt)
-                        din[f'ch{channel}_P2P_fit'].append(amplitude)
-                            
+                    if do_fit: 
+                        amplitude_fit = get_amplitude_fit(popt)
+                        din[f'ch{channel}_P2P_fit'].append(amplitude_fit)
+                        pulse_time_fit = get_time_fit(popt)
+                        din[f'ch{channel}_time_fit'].append(pulse_time_fit)
 
-                    #calculate time
-                    if do_time_raw: 
-                        pulse_time = get_time_raw(time,voltage[channel-1])
-                        din[f'ch{channel}_time_raw'].append(pulse_time)
-                            
-
-                    if do_time_base:
-                        pulse_time = get_time_base(time, voltage[channel-1])
-                        din[f'ch{channel}_time_base'].append(pulse_time)
-                            
-
-                    if do_time_fit: 
-                        pulse_time = get_time_fit(popt)
-                        din[f'ch{channel}_time_fit'].append(pulse_time)
-                           
-                        
-                    if do_time_smooth:
-                        pulse_time = get_time_smooth(time, voltage[channel-1], 5)
-                        din[f'ch{channel}_time_smooth'].append(pulse_time)
                         
                 if verbose and (j >= vieweventstart) and (j <= viewevents+vieweventstart): #show the waveform fit line
-                    print(f"Channel {channel} RMS: {totalrms:.2f}; fit params: {popt[0]:.2f}, {popt[1]:.1f}, {popt[2]:.2f}, {popt[3]:.1f}, {popt[4]:.2f}, {popt[5]:.3f}")
+                    print(f"Channel {channel} RMS: {totalrms:.2f}")
+                    if do_fit: print(f"fit params: {popt[0]:.2f}, {popt[1]:.1f}, {popt[2]:.2f}, {popt[3]:.1f}, {popt[4]:.2f}, {popt[5]:.3f}")
                     ts = np.linspace(0,np.max(time),501)
-                    if totalrms > rmscut: 
+                    if totalrms > rmscut and do_fit: 
                         fits = waveform(ts,*popt)
                     else:
-                        fits = [popt[0]]*501
-
+                        fits = np.mean(voltage[channel-1])*501
+                    
+                    #plot the data, smooth if smoothing, fit if fitting
                     ax[channel-1].plot(time,voltage[channel-1],label="raw")
-                    ax[channel-1].hlines(np.sum(voltage_smooth[0:151],xmin=0,xmax=200, color='purple',label="smooth_baseline"))
-                    if do_time_smooth or do_amplitude_smooth: ax[channel-1].plot(time,voltage_smooth(voltage[channel-1],5),label="smooth_5", color='orange')
-                    if do_amplitude_fit or do_time_fit: ax[channel-1].plot(ts,fits,label="fit")
+                    if do_smooth: ax[channel-1].plot(time,smoothvoltage,label="smooth_5", color='orange')
+                    if do_fit: ax[channel-1].plot(ts,fits,label="fit",color="black")
+                    
+                    
                     if do_residual: ax[channel-1].plot(time,residual,label="residual")
-                    #ax[channel-1].set_xlim(50,100)
-                    #ax[channel-1].set_ylim(-5,15)
+
                     #draw the P2P and time 
-                    if do_time_raw: ax[channel-1].vlines(get_time_raw(time,voltage[channel-1]),ymin=-10,ymax=20, color='r',label="t_raw")
-                    if do_time_base: ax[channel-1].vlines(get_time_base(popt,time,voltage[channel-1]),ymin=5,ymax=35, color='b',label="t_base")
-                    if do_time_fit: ax[channel-1].vlines(get_time_fit(popt),ymin=20,ymax=50, color='g',label="t_fit")
-                    if do_amplitude_raw: ax[channel-1].hlines(get_amplitude_raw(voltage[channel-1]),xmin=0,xmax=200, color='r',label="A_raw")
-                    if do_amplitude_fit: ax[channel-1].hlines(get_amplitude_fit(popt),xmin=0,xmax=200, color='g',label="A_fit")
-                    if do_amplitude_base: ax[channel-1].hlines(get_amplitude_base(popt,voltage[channel-1]),xmin=0,xmax=200, color='b',label="A_base")
-                    if do_time_smooth: ax[channel-1].vlines(get_time_smooth(time,voltage[channel-1],5),ymin=35,ymax=65, color='orange',label="t_smooth_5")
-                
+                    if do_raw: 
+                        baseline_raw = np.min(voltage[channel-1][0:findindex(voltage[channel-1],np.max(voltage[channel-1]))+1])
+                        ax[channel-1].vlines(pulse_time_raw, ymin=baseline_raw, ymax=amplitude_raw+baseline_raw, color='r', label="t_raw")
+                        ax[channel-1].hlines(baseline_raw, xmin=pulse_time_raw-30, xmax=pulse_time_raw+30, color='r')
+                        ax[channel-1].hlines(amplitude_raw+baseline_raw, xmin=pulse_time_raw-30, xmax=pulse_time_raw+30, color='r', label="A_raw")
+                        
+                    if do_base: 
+                        baseline_base = np.mean(voltage[channel-1][0:150])
+                        ax[channel-1].vlines(pulse_time_base, ymin=baseline_base, ymax=amplitude_base+baseline_base, color='b',label="t_base")
+                        ax[channel-1].hlines(baseline_base, xmin=pulse_time_base-30, xmax=pulse_time_base+30, color='b')
+                        ax[channel-1].hlines(amplitude_base+baseline_base, xmin=pulse_time_base-30, xmax=pulse_time_base+30, color='b',label="A_base")
+                        
+                    if do_smooth: 
+                        baseline_smooth = np.mean(smoothvoltage[0:151])
+                        ax[channel-1].vlines(pulse_time_smooth, ymin=baseline_smooth, ymax=amplitude_smooth+baseline_smooth, color='purple',label="t_smooth_5")
+                        ax[channel-1].hlines(baseline_smooth, xmin=pulse_time_smooth-30, xmax=pulse_time_smooth+30, color='purple')
+                        ax[channel-1].hlines(amplitude_smooth+baseline_smooth, xmin=pulse_time_smooth-30, xmax=pulse_time_smooth+30, color='purple', label="A_smooth")
+                        
+                    if do_fit: 
+                        ax[channel-1].vlines(pulse_time_fit, ymin=popt[0], ymax=popt[0]+amplitude_fit, color='g',label="t_fit")
+                        ax[channel-1].hlines(popt[0], xmin=pulse_time_fit-30, xmax=pulse_time_fit+30, color='g')
+                        ax[channel-1].hlines(amplitude_fit+popt[0], xmin=pulse_time_fit-30, xmax=pulse_time_fit+30, color='g',label="A_fit")
+
             if verbose and (j >= vieweventstart) and (j <= viewevents+vieweventstart):
                 plt.legend()        
                 plt.show()
