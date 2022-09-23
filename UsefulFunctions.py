@@ -143,7 +143,7 @@ def voltage_smooth(voltages, degree):
     
     return newarray
 
-def get_dataframe(inputfiles, whichstats, channelnum=[1,2,3,4], rmscut=1.5, residualcut=5, p0=[(0,100,1,110,-100,100),(0,100,1,110,-100,100),(0,100,1,110,-100,100),(0,100,1,110,-100,100),(0,100,1,110,-100,100)],do_residual=False, verbose=False,viewevents=10,vieweventstart=0,eventstart=1):
+def get_dataframe(inputfiles, whichstats, channels=[1,2,3,4], rmscut=1.5, residualcut=5, p0=[(0,100,1,110,-100,100),(0,100,1,110,-100,100),(0,100,1,110,-100,100),(0,100,1,110,-100,100),(0,100,1,110,-100,100)],eventstart=1,verbose=False,show_residual=False,vieweventstart=1,viewevents=10):
     #error handling
     error = False
     if "list" not in str(type(inputfiles)):
@@ -165,13 +165,13 @@ def get_dataframe(inputfiles, whichstats, channelnum=[1,2,3,4], rmscut=1.5, resi
             if not (whichstat == 0 or whichstat == 1): 
                 print("ERROR: whichstats (second input) must be a list of ten boolean values.")
                 error = True
-    if "list" not in str(type(channelnum)):
-        print("ERROR: channelnum must be a list of integers (1 through 4).")
+    if "list" not in str(type(channels)):
+        print("ERROR: channels must be a list of integers (1 through 4).")
         error = True
     else:
-        for chan in channelnum:
+        for chan in channels:
             if not (chan == 1 or chan ==2 or chan ==3 or chan == 4): 
-                print("ERROR: channelnum must be a list of integers (1 through 4).")
+                print("ERROR: channels must be a list of integers (1 through 4).")
                 error = True
     
     
@@ -189,7 +189,7 @@ def get_dataframe(inputfiles, whichstats, channelnum=[1,2,3,4], rmscut=1.5, resi
     #toc = ttime.perf_counter_ns()
 
     channelnames=[]
-    for ch in channelnum:
+    for ch in channels:
         channelnames.append(f'ch{ch}')
 
     stats=[]
@@ -240,12 +240,12 @@ def get_dataframe(inputfiles, whichstats, channelnum=[1,2,3,4], rmscut=1.5, resi
                 values = line.split()
                 time = np.append(time, float(values[2]))
 
-                for channel in channelnum:
+                for channel in channels:
                     voltage[channel-1] = np.append(voltage[channel-1], float(values[channel+2]))
                 
             
             #calculate stats for each channel
-            for channel in channelnum:
+            for channel in channels:
                 totalrms = sum((voltage[channel-1]-np.mean(voltage[channel-1]))**2)/len(voltage[channel-1])
                 if totalrms < rmscut:
                     popt = (np.mean(voltage[channel-1]),0,0,0,1,0)
@@ -342,7 +342,7 @@ def get_dataframe(inputfiles, whichstats, channelnum=[1,2,3,4], rmscut=1.5, resi
                     if do_fit: ax[channel-1].plot(ts,fits,label="fit",color="black")
                     
                     
-                    if do_residual: ax[channel-1].plot(time,residual,label="residual")
+                    if show_residual: ax[channel-1].plot(time,residual,label="residual")
 
                     #draw the P2P and time 
                     if do_raw: 
